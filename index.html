@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- SEO Meta Tags -->
+  <title>Gestión de Stock de Neumáticos | Santiago Marzo y Coronel Gil</title>
+  <meta name="description" content="Sistema de gestión de stock de neumáticos para depósitos en sucursales Santiago Marzo y Coronel Gil. Planilla ultra-rápida en tiempo real.">
+  <meta name="author" content="Antigravity System">
+  
+  <!-- Estilos CSS con Rompedor de Caché -->
+  <link rel="stylesheet" href="style.css?v=1.0.3">
+  
+  <!-- FontAwesome Iconos -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+
+  <!-- BARRA SUPERIOR (NAVBAR) -->
+  <nav class="navbar" id="navbar">
+    <div class="brand-section">
+      <i class="fas fa-compact-disc brand-icon"></i>
+      <h1>N.NEUMÁTICOS STOCK</h1>
+    </div>
+    
+    <div class="system-status">
+      <!-- Estadísticas Rápidas -->
+      <div class="quick-stats">
+        <div class="stat-item">Stock Total: <span class="stat-value" id="stat-total-stock">0</span></div>
+        <div class="stat-item">Modelos: <span class="stat-value" id="stat-total-models">0</span></div>
+      </div>
+      
+      <!-- Indicador Firebase -->
+      <div class="status-indicator" id="status-indicator">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">Cargando modo...</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- CONTENEDOR PRINCIPAL DE LA SPA -->
+  <div class="app-container">
+    
+    <!-- ÁREA DE TRABAJO IZQUIERDA Y CENTRAL -->
+    <main class="main-content">
+      
+      <!-- BARRA DE CONTROLES, PESTAÑAS Y BÚSQUEDA -->
+      <div class="control-bar">
+        <!-- Pestañas y Exportación (Arriba de la tabla) -->
+        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+          <div class="branch-tabs" id="branch-tabs">
+            <button class="tab-btn active" data-branch="santiago">Santiago Marzo</button>
+            <button class="tab-btn" data-branch="coronel">Coronel Gil</button>
+            <button class="tab-btn" data-branch="combinado" title="Agrupa por SKU y suma stock de ambas sucursales">Stock Combinado</button>
+          </div>
+          
+          <!-- Botones contextuales de descarga -->
+          <button class="btn-secondary" id="btn-export-current-branch" title="Descargar stock actual en pantalla" style="border-color: #10b981; color: #10b981; padding: 0.45rem 0.75rem; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 0.35rem; height: 36px; border-radius: 6px;">
+            <i class="far fa-file-excel"></i> Descargar Excel
+          </button>
+          <button class="btn-secondary" id="btn-export-all-branches" title="Descargar stock de ambas sucursales" style="border-color: #10b981; color: #10b981; padding: 0.45rem 0.75rem; font-size: 0.8rem; display: none; align-items: center; gap: 0.35rem; height: 36px; border-radius: 6px;">
+            <i class="fas fa-file-excel"></i> Descargar Excel Completo
+          </button>
+        </div>
+        
+        <!-- Buscador e inyección de datos -->
+        <div class="search-and-actions">
+          <div class="search-box">
+            <i class="fas fa-search"></i>
+            <input type="text" class="search-input" id="search-input" placeholder="Buscar por SKU, descripción o info...">
+          </div>
+          
+          <!-- Ordenamiento -->
+          <div class="sort-box" style="display: flex; align-items: center; gap: 0.35rem;">
+            <i class="fas fa-sort-amount-down" style="color: var(--accent-cyan); font-size: 0.85rem;" title="Ordenar por"></i>
+            <select class="filter-control" id="sort-by-select" style="background-color: var(--bg-main); border-color: var(--border-color); color: #ffffff; padding: 0.45rem; font-size: 0.8rem; border-radius: 6px; cursor: pointer; outline: none;">
+              <option value="desc-az">Descripción (A-Z)</option>
+              <option value="stock-desc">Mayor Stock</option>
+              <option value="stock-asc">Menor Stock</option>
+            </select>
+          </div>
+
+          <button class="btn-secondary" id="btn-open-import" title="Importar neumáticos desde Excel" style="border-color: var(--accent-cyan); color: var(--accent-cyan);">
+            <i class="fas fa-file-import"></i> Importar Excel
+          </button>
+
+          <button class="btn-secondary" id="btn-open-audit" title="Comparar stock con reporte Gnik" style="border-color: var(--accent-emerald); color: var(--accent-emerald);">
+            <i class="fas fa-clipboard-check"></i> Auditar Gnik
+          </button>
+
+          <button class="btn-primary" id="btn-add-product" title="Registrar nuevo neumático en la planilla">
+            <i class="fas fa-plus"></i> Registrar
+          </button>
+        </div>
+      </div>
+
+      <!-- TABLA PRINCIPAL ESTILO EXCEL PLANILLA -->
+      <div class="table-wrapper">
+        <table class="stock-table" id="stock-table">
+          <thead>
+            <tr>
+              <th class="col-sku">SKU (Doble clic)</th>
+              <th class="col-desc">Descripción (Doble clic)</th>
+              <th class="col-sector">Info (Doble clic)</th>
+              <th class="col-stock">Stock (Edición Rápida)</th>
+            </tr>
+          </thead>
+          <tbody id="table-body">
+            <!-- Inyectado dinámicamente por app.js -->
+          </tbody>
+        </table>
+      </div>
+
+
+
+      <!-- SECCIÓN DEL HISTORIAL GENERAL Y FILTROS (Colapsable por Defecto) -->
+      <section class="history-section collapsed" id="history-section">
+        <div class="history-header" id="history-header-trigger" style="cursor: pointer; user-select: none;">
+          <h3>
+            <i class="fas fa-history" style="color: var(--accent-cyan); margin-right: 0.5rem;"></i> 
+            Historial de Movimientos de Neumáticos
+            <i class="fas fa-chevron-down" id="history-toggle-chevron" style="font-size: 0.85rem; margin-left: 0.75rem; color: var(--accent-cyan);"></i>
+          </h3>
+          <button class="btn-secondary" id="btn-export-history" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;">
+            <i class="fas fa-file-excel" style="color: #10b981;"></i> Exportar Historial
+          </button>
+        </div>
+
+        <div class="history-content" id="history-content">
+          <!-- Filtros del Historial -->
+          <div class="history-filters">
+            <div class="filter-group">
+              <label for="hist-filter-sku">SKU</label>
+              <input type="text" class="filter-control" id="hist-filter-sku" placeholder="Filtrar SKU">
+            </div>
+            <div class="filter-group">
+              <label for="hist-filter-desc">Descripción</label>
+              <input type="text" class="filter-control" id="hist-filter-desc" placeholder="Filtrar marca/medida">
+            </div>
+            <div class="filter-group">
+              <label for="hist-filter-branch">Sucursal</label>
+              <select class="filter-control" id="hist-filter-branch">
+                <option value="">Todas</option>
+                <option value="Santiago Marzo">Santiago Marzo</option>
+                <option value="Coronel Gil">Coronel Gil</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label for="hist-filter-day">Por Día</label>
+              <input type="date" class="filter-control" id="hist-filter-day">
+            </div>
+            <div class="filter-group">
+              <label for="hist-filter-from">Rango Desde</label>
+              <input type="date" class="filter-control" id="hist-filter-from">
+            </div>
+            <div class="filter-group">
+              <label for="hist-filter-to">Rango Hasta</label>
+              <input type="date" class="filter-control" id="hist-filter-to">
+            </div>
+            
+            <div style="display: flex; align-items: flex-end;">
+              <button class="btn-secondary" id="btn-clear-history-filters" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" title="Limpiar todos los filtros">
+                <i class="fas fa-eraser"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Tabla Histórica -->
+          <div class="history-table-wrapper">
+            <table class="history-table">
+              <thead>
+                <tr>
+                  <th>SKU</th>
+                  <th>Descripción</th>
+                  <th>Sucursal</th>
+                  <th>Cambio</th>
+                  <th>Previo</th>
+                  <th>Nuevo</th>
+                  <th>Hora</th>
+                  <th>Fecha</th>
+                </tr>
+              </thead>
+              <tbody id="history-table-body">
+                <!-- Inyectado dinámicamente por app.js -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+      
+    </main>
+
+    <!-- PANEL LATERAL DE REGISTRO EN TIEMPO REAL (DERECHA) -->
+    <aside class="activity-sidebar" id="activity-sidebar">
+      <!-- Botón Solapa de Despliegue que "asoma" cuando está plegado -->
+      <button class="btn-sidebar-toggle" id="btn-toggle-sidebar" title="Ver/Ocultar Registro en Vivo">
+        <i class="fas fa-chevron-right"></i>
+      </button>
+
+      <div class="sidebar-header">
+        <h2><i class="fas fa-wave-square" style="color: var(--accent-emerald);"></i> REGISTRO EN VIVO</h2>
+        <div class="live-badge">
+          <span class="live-dot"></span> VIVO
+        </div>
+      </div>
+      
+      <div class="activity-feed" id="activity-feed">
+        <!-- Inyectado dinámicamente por app.js con animaciones -->
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- MODAL / DIÁLOGO DE IMPORTACIÓN DESDE EXCEL -->
+  <div class="config-modal" id="import-modal" style="display: none; justify-content: center; align-items: center;">
+    <div class="config-card" style="max-width: 550px;">
+      <div class="modal-header">
+        <h3><i class="fas fa-file-excel" style="color: #10b981; margin-right: 0.5rem;"></i> Importar Stock desde Excel</h3>
+        <button class="btn-close-modal" id="btn-close-import"><i class="fas fa-times"></i></button>
+      </div>
+      
+      <div class="modal-body">
+        <!-- ZONA DRAG AND DROP -->
+        <div id="import-drop-zone" style="border: 2px dashed var(--border-color); border-radius: 8px; padding: 2rem 1rem; text-align: center; background-color: rgba(15, 23, 42, 0.4); cursor: pointer; transition: var(--transition-fast);">
+          <i class="fas fa-cloud-upload-alt" style="font-size: 2.5rem; color: var(--accent-cyan); margin-bottom: 0.75rem;"></i>
+          <p style="font-size: 0.9rem; font-weight: 600; margin-bottom: 0.25rem;">Arrastre aquí sus archivos Excel</p>
+          <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.75rem;">Soporta SantiagoMarzo.xlsx o CoronelGil.xlsx</p>
+          <span class="btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.75rem; display: inline-block;">Seleccionar Archivo</span>
+        </div>
+        <input type="file" id="import-file-input" accept=".xlsx, .xls" style="display: none;">
+
+        <!-- SECCIÓN DE PREVISTA Y CONFIRMACIÓN (Oculta por defecto) -->
+        <div id="import-preview-section" style="display: none; margin-top: 1rem; background-color: rgba(15, 23, 42, 0.2); padding: 1rem; border-radius: 6px; border: 1px solid var(--border-color); flex-direction: column; gap: 0.75rem;">
+          <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+            <span>Archivo: <strong id="import-filename" style="color: #ffffff;">-</strong></span>
+            <span id="import-filesize" style="color: var(--text-muted); font-size: 0.8rem;">-</span>
+          </div>
+          <div style="font-size: 0.85rem;">
+            <span>Neumáticos en planilla: <strong id="import-rows-count" style="color: var(--accent-cyan); font-size: 1rem;">0</strong></span>
+          </div>
+
+          <!-- Selector de Sucursal Destino -->
+          <div class="form-group" style="margin-top: 0.5rem;">
+            <label for="import-branch-select" style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">SUCURSAL DESTINO</label>
+            <select class="filter-control" id="import-branch-select" style="width: 100%; padding: 0.5rem; background-color: var(--bg-main); border-color: var(--border-color); color: #ffffff;">
+              <option value="Santiago Marzo">Santiago Marzo</option>
+              <option value="Coronel Gil">Coronel Gil</option>
+            </select>
+          </div>
+
+          <!-- Opción de Sobrescribir Stock -->
+          <div class="form-group" style="margin-top: 0.5rem; display: flex; flex-direction: row; align-items: center; gap: 0.5rem; background-color: rgba(6, 182, 212, 0.05); padding: 0.5rem; border-radius: 4px; border: 1px solid rgba(6, 182, 212, 0.15);">
+            <input type="checkbox" id="import-overwrite-stock" style="width: 16px; height: 16px; cursor: pointer; margin: 0;">
+            <label for="import-overwrite-stock" style="font-size: 0.78rem; font-weight: 600; color: #ffffff; cursor: pointer; user-select: none; margin: 0;">
+              Sobrescribir stock de neumáticos que ya existen
+            </label>
+          </div>
+
+          <!-- Alerta de Regla de Negocio (Omitir stock ya cargado) -->
+          <div id="import-rule-warning" style="background-color: rgba(245, 158, 11, 0.1); border-left: 3px solid var(--accent-amber); padding: 0.6rem 0.8rem; border-radius: 4px; font-size: 0.75rem; color: #fcd34d; line-height: 1.4;">
+            <i class="fas fa-exclamation-triangle" style="margin-right: 0.35rem;"></i>
+            <strong>CONSERVACIÓN DE STOCK:</strong> Al importar, solo se cargarán los neumáticos nuevos (SKU nuevos). Si el neumático ya existe en el catálogo de esta sucursal, **su stock NO será modificado**.
+          </div>
+        </div>
+
+        <!-- SECCIÓN DE RESULTADOS DE IMPORTACIÓN (Oculta por defecto) -->
+        <div id="import-results-section" style="display: none; margin-top: 1rem; background-color: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); padding: 1rem; border-radius: 6px; text-align: center; flex-direction: column; gap: 0.5rem;">
+          <i class="far fa-check-circle" style="font-size: 2rem; color: var(--accent-emerald); margin-bottom: 0.25rem;"></i>
+          <h4 style="color: #ffffff; font-size: 0.95rem; font-weight: 700;">¡Importación Completada Exitosamente!</h4>
+          <div style="display: flex; justify-content: space-around; margin-top: 0.5rem; font-size: 0.85rem;">
+            <div style="display: flex; flex-direction: column;">
+              <span style="color: var(--text-muted); font-size: 0.75rem;">NUEVOS</span>
+              <strong id="import-res-added" style="color: var(--accent-emerald); font-size: 1.25rem;">0</strong>
+            </div>
+            <div style="display: flex; flex-direction: column;">
+              <span style="color: var(--text-muted); font-size: 0.75rem;">ACTUALIZADOS</span>
+              <strong id="import-res-updated" style="color: var(--accent-cyan); font-size: 1.25rem;">0</strong>
+            </div>
+            <div style="display: flex; flex-direction: column;">
+              <span style="color: var(--text-muted); font-size: 0.75rem;">OMITIDOS</span>
+              <strong id="import-res-skipped" style="color: var(--accent-amber); font-size: 1.25rem;">0</strong>
+            </div>
+          </div>
+          <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">El historial de movimientos documentó este ingreso masivo.</p>
+        </div>
+      </div>
+      
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" id="btn-cancel-import">Cerrar</button>
+        <button type="button" class="btn-primary" id="btn-execute-import" disabled style="background: linear-gradient(135deg, #059669 0%, #047857 100%); border-color: var(--accent-emerald);">
+          <i class="fas fa-check"></i> Procesar Importación
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL / DIÁLOGO DE AUDITORÍA GNIK -->
+  <div class="config-modal" id="audit-modal">
+    <div class="config-card audit-card">
+      <div class="modal-header">
+        <h3 class="audit-header-title">
+          <i class="fas fa-clipboard-check"></i> 
+          Auditoría de Stock Gnik
+          <span id="audit-branch-badge" class="badge-branch"></span>
+        </h3>
+        <button class="btn-close-modal" id="btn-close-audit"><i class="fas fa-times"></i></button>
+      </div>
+      
+      <div class="modal-body audit-modal-body">
+        <!-- ZONA DRAG AND DROP -->
+        <div id="audit-drop-zone" class="audit-drop-zone">
+          <i class="fas fa-file-excel drop-icon"></i>
+          <p class="drop-text-primary">Arrastre aquí el Excel de Gnik</p>
+          <p id="audit-drop-branch-text" class="drop-text-secondary">Se leerán SKUs (Col D), Descripciones (Col E) y Stock (Col G) desde fila 6</p>
+          <span class="btn-secondary select-file-btn">Seleccionar Archivo Gnik</span>
+        </div>
+        <input type="file" id="audit-file-input" accept=".xlsx, .xls" style="display: none;">
+
+        <!-- SECCIÓN DE RESULTADOS DE AUDITORÍA (Oculta por defecto) -->
+        <div id="audit-results-section" class="audit-results-section">
+          <!-- Archivo info y Botón Descargar Reporte -->
+          <div class="audit-info-bar">
+            <div class="audit-file-meta">
+              <span>Archivo: <strong id="audit-filename">-</strong></span>
+              <span id="audit-filesize" class="meta-size">-</span>
+            </div>
+            <button class="btn-primary" id="btn-export-audit-report">
+              <i class="fas fa-file-excel"></i> Descargar Reporte Excel
+            </button>
+          </div>
+
+          <!-- TARJETAS DE ESTADÍSTICAS RÁPIDAS -->
+          <div class="audit-stats-grid">
+            <div class="audit-stat-card active" id="card-stat-diff">
+              <span class="stat-lbl">Diferencias</span>
+              <strong id="audit-stat-diff-count" class="stat-val-rose">0</strong>
+            </div>
+            <div class="audit-stat-card" id="card-stat-missing-sys">
+              <span class="stat-lbl">No en Sistema</span>
+              <strong id="audit-stat-missing-sys-count" class="stat-val-amber">0</strong>
+            </div>
+            <div class="audit-stat-card" id="card-stat-missing-gnik">
+              <span class="stat-lbl">No en Gnik</span>
+              <strong id="audit-stat-missing-gnik-count" class="stat-val-cyan">0</strong>
+            </div>
+            <div class="audit-stat-card" id="card-stat-ok">
+              <span class="stat-lbl">Coincidentes</span>
+              <strong id="audit-stat-ok-count" class="stat-val-emerald">0</strong>
+            </div>
+          </div>
+
+          <!-- PESTAÑAS DE VISTA DETALLADA -->
+          <div class="audit-tabs">
+            <button class="audit-tab-btn active" data-tab="diff">
+              Diferencias (<span id="tab-diff-lbl">0</span>)
+            </button>
+            <button class="audit-tab-btn" data-tab="missing-sys">
+              No en Sistema (<span id="tab-missing-sys-lbl">0</span>)
+            </button>
+            <button class="audit-tab-btn" data-tab="missing-gnik">
+              No en Gnik (<span id="tab-missing-gnik-lbl">0</span>)
+            </button>
+            <button class="audit-tab-btn" data-tab="ok">
+              Coincidentes (<span id="tab-ok-lbl">0</span>)
+            </button>
+          </div>
+
+          <!-- BUSCADOR INTERNO DEL MODAL DE AUDITORÍA -->
+          <div class="audit-search-wrapper">
+            <i class="fas fa-search"></i>
+            <input type="text" id="audit-search-input" placeholder="Filtrar por SKU o descripción en esta lista...">
+          </div>
+
+          <!-- TABLA DE DETALLE DE AUDITORÍA -->
+          <div class="audit-table-wrapper">
+            <table class="stock-table audit-detail-table">
+              <thead id="audit-table-head">
+                <!-- Inyectado dinámicamente -->
+              </thead>
+              <tbody id="audit-table-body">
+                <!-- Inyectado dinámicamente -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" id="btn-cancel-audit">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+
+
+  <!-- SDKs de Firebase Compatibles por CDN (Robustos, rápidos, sin bundle) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+  <!-- SheetJS CDN para generación nativa de Excel rápido (.xlsx) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <!-- Lógica y Scripts de la App con Rompedor de Caché -->
+  <script src="config.js?v=1.0.3"></script>
+  <script src="mock-data.js?v=1.0.3"></script>
+  <script src="firebase-service.js?v=1.0.3"></script>
+  <script src="app.js?v=1.0.3"></script>
+
+</body>
+</html>
