@@ -370,11 +370,11 @@ body {
 
 /* Fila modificada recientemente: verde sutil y elegante */
 .stock-table tbody tr.row-updated {
-  background-color: rgba(16, 185, 129, 0.08) !important;
+  background-color: rgba(16, 185, 129, 0.15) !important;
 }
 
 .stock-table tbody tr.row-updated:hover {
-  background-color: rgba(16, 185, 129, 0.14) !important;
+  background-color: rgba(16, 185, 129, 0.22) !important;
 }
 
 /* Estilo planilla: Celdas editables */
