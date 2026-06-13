@@ -1421,6 +1421,127 @@ tr:hover .btn-delete-row {
     border: 1px solid var(--border-color);
     align-items: center;
   }
+
+  /* --- TRANSFORMACIÓN DE TABLA A TARJETAS PARA ELIMINAR SCROLL HORIZONTAL EN MÓVIL --- */
+  .stock-table thead {
+    display: none;
+  }
+  
+  .stock-table, 
+  .stock-table tbody, 
+  .stock-table tr, 
+  .stock-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .table-wrapper {
+    overflow-x: hidden !important;
+  }
+  
+  .stock-table tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.25rem 0;
+  }
+  
+  .stock-table tbody tr {
+    background-color: var(--bg-surface) !important;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem;
+    position: relative;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 0;
+    transition: transform var(--transition-fast), border-color var(--transition-fast);
+  }
+
+  .stock-table tbody tr:hover {
+    border-color: var(--accent-cyan);
+  }
+  
+  .stock-table td {
+    padding: 0 !important;
+    border-bottom: none !important;
+    width: 100%;
+  }
+  
+  .stock-table td[data-field="sku"] {
+    font-size: 0.95rem;
+    color: var(--accent-cyan);
+    font-weight: 700;
+  }
+  
+  .stock-table td[data-field="descripcion"] {
+    font-size: 0.88rem;
+    line-height: 1.4;
+    font-weight: 500;
+    color: var(--text-main);
+    padding-right: 2rem !important; /* Espacio para que no tape el botón eliminar */
+  }
+  
+  .stock-table td[data-field="sector"] {
+    display: inline-block;
+    width: auto;
+    margin-top: 0.15rem;
+  }
+  
+  /* Control de Stock al pie de la tarjeta */
+  .stock-table td:last-child {
+    margin-top: 0.5rem;
+    padding-top: 0.75rem !important;
+    border-top: 1px solid var(--border-grid) !important;
+  }
+  
+  .stock-control {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 1rem;
+    width: 100%;
+  }
+  
+  /* Botones de ajuste más táctiles en celular */
+  .btn-stock-adjust {
+    width: 42px !important;
+    height: 42px !important;
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .stock-display-val {
+    width: 60px !important;
+    height: 42px !important;
+    font-size: 1.2rem !important;
+    background-color: var(--bg-main) !important;
+    border: 1px solid var(--border-color) !important;
+  }
+  
+  /* Botón eliminar absoluto en la esquina superior derecha */
+  .btn-delete-row {
+    position: absolute !important;
+    top: 1rem !important;
+    right: 1rem !important;
+    margin-left: 0 !important;
+    padding: 0.5rem !important;
+    font-size: 1.1rem !important;
+    color: var(--accent-rose) !important;
+    opacity: 0.7;
+    background: none !important;
+    border: none !important;
+    transition: opacity var(--transition-fast);
+  }
+
+  .btn-delete-row:hover {
+    opacity: 1;
+    color: #ff4d6d !important;
+  }
 }
 
 @media (max-width: 600px) {
