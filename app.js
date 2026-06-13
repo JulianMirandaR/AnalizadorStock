@@ -1321,30 +1321,63 @@ function handleImportFile(file) {
         return;
       }
 
-      // Analizar las columnas: primera columna SKU (Código), segunda columna Descripción, tercera columna Stock
-      // Usamos índices fijos: 0 = SKU, 1 = Descripción, 2 = Stock
+      // Detección dinámica de la fila de cabeceras y mapeo inteligente de columnas
+      let headerRowIndex = 0; // Por defecto asumimos la fila 0
+      let skuIdx = 0;
+      let descIdx = 1;
+      let stockIdx = 2;
+
+      // Escanear las primeras 15 filas para encontrar la cabecera real del Excel
+      for (let i = 0; i < Math.min(rows.length, 15); i++) {
+        const row = rows[i];
+        if (!row || !Array.isArray(row)) continue;
+        
+        // Convertir todos los campos a texto en minúsculas y sin espacios laterales
+        const cols = row.map(c => String(c || "").toLowerCase().trim());
+        
+        const tempSkuIdx = cols.findIndex(c => c.includes("código") || c.includes("codigo") || c.includes("sku") || c === "code");
+        const tempDescIdx = cols.findIndex(c => c.includes("descripción") || c.includes("descripcion") || c.includes("detalle") || c.includes("nombre") || c.includes("producto"));
+        const tempStockIdx = cols.findIndex(c => c.includes("stock") || c.includes("cant") || c.includes("físico") || c.includes("fisico") || c.includes("disponible") || c.includes("unidades"));
+        
+        // Si detectamos al menos SKU y otra columna relevante, identificamos esta fila como cabecera
+        if (tempSkuIdx !== -1 && (tempStockIdx !== -1 || tempDescIdx !== -1)) {
+          headerRowIndex = i;
+          skuIdx = tempSkuIdx;
+          if (tempDescIdx !== -1) descIdx = tempDescIdx;
+          if (tempStockIdx !== -1) stockIdx = tempStockIdx;
+          console.log(`Cabecera de Excel detectada en fila ${i}. SKU Col: ${skuIdx}, Desc Col: ${descIdx}, Stock Col: ${stockIdx}`);
+          break;
+        }
+      }
+
       const parsedProducts = [];
       
-      for (let i = 1; i < rows.length; i++) {
+      // Comenzar la lectura de datos a partir de la fila siguiente a las cabeceras
+      for (let i = headerRowIndex + 1; i < rows.length; i++) {
         const row = rows[i];
         if (!row || row.length === 0) continue;
         
-        // SKU/Código es columna 0 - Evitamos decimales de lectura (ej. 60040.0 -> 60040)
+        // Leer SKU y limpiar comillas simples sobrantes
         let skuVal = "";
-        if (row[0] !== undefined && row[0] !== null) {
-          if (typeof row[0] === 'number') {
-            skuVal = String(Math.floor(row[0]));
+        if (row[skuIdx] !== undefined && row[skuIdx] !== null) {
+          const rawSku = String(row[skuIdx]).trim().replace(/^'|'$/g, "");
+          if (/^\d+(\.\d+)?$/.test(rawSku)) {
+            // Evitar decimales de lectura (ej. 60040.0 -> 60040)
+            skuVal = String(Math.floor(Number(rawSku)));
           } else {
-            const rawStr = String(row[0]).trim();
-            skuVal = rawStr.split('.')[0].split(',')[0];
+            skuVal = rawSku;
           }
         }
-        // Descripción es columna 1
-        const descVal = String(row[1] !== undefined ? row[1] : "").trim();
-        // Stock es columna 2
-        const stockVal = parseInt(row[2] !== undefined ? row[2] : 0) || 0;
+        
+        // Leer Descripción y limpiar comillas simples
+        const descVal = String(row[descIdx] !== undefined ? row[descIdx] : "")
+          .trim()
+          .replace(/^'|'$/g, "");
+          
+        // Leer Stock
+        const stockVal = parseInt(row[stockIdx] !== undefined ? row[stockIdx] : 0) || 0;
 
-        if (!skuVal) continue; // Si no tiene SKU, lo omitimos
+        if (!skuVal) continue; // Si no tiene SKU, omitir
 
         parsedProducts.push({
           sku: skuVal,
