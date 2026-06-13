@@ -26,7 +26,12 @@ const AppState = {
     dateFrom: "",
     dateTo: "",
     day: ""
-  }
+  },
+  
+  // Control de ordenamiento y color para cambios recientes
+  sortingStocks: {}, // Mantiene stock congelado para ordenamiento: { id: stock }
+  sortingTimers: {}, // Mantiene referencias a setTimeout: { id: timer }
+  updatedProducts: new Set() // Set de IDs de productos modificados en esta sesión
 };
 
 // Inicialización cuando el DOM está listo
@@ -174,6 +179,19 @@ function setupEventHandlers() {
   document.getElementById("btn-export-current-branch").addEventListener("click", () => exportBranchExcel(true));
   document.getElementById("btn-export-all-branches").addEventListener("click", () => exportBranchExcel(false));
   document.getElementById("btn-export-history").addEventListener("click", exportHistoryExcel);
+
+  // Botón para restablecer colores y ordenamiento diferido
+  const btnResetColors = document.getElementById("btn-reset-updated-colors");
+  if (btnResetColors) {
+    btnResetColors.addEventListener("click", () => {
+      // Limpiar temporizadores de ordenamiento activos
+      Object.values(AppState.sortingTimers).forEach(timer => clearTimeout(timer));
+      AppState.sortingTimers = {};
+      AppState.sortingStocks = {};
+      AppState.updatedProducts.clear();
+      renderTable();
+    });
+  }
 
   // Filtros de historial de movimientos
   const hSku = document.getElementById("hist-filter-sku");
@@ -574,9 +592,17 @@ function renderTable() {
   if (AppState.sortBy === "desc-az") {
     filtered.sort((a, b) => String(a.descripcion).localeCompare(String(b.descripcion), undefined, {sensitivity: 'base'}));
   } else if (AppState.sortBy === "stock-desc") {
-    filtered.sort((a, b) => (b.stock || 0) - (a.stock || 0));
+    filtered.sort((a, b) => {
+      const stockA = AppState.sortingStocks[a.id] !== undefined ? AppState.sortingStocks[a.id] : (a.stock || 0);
+      const stockB = AppState.sortingStocks[b.id] !== undefined ? AppState.sortingStocks[b.id] : (b.stock || 0);
+      return stockB - stockA;
+    });
   } else if (AppState.sortBy === "stock-asc") {
-    filtered.sort((a, b) => (a.stock || 0) - (b.stock || 0));
+    filtered.sort((a, b) => {
+      const stockA = AppState.sortingStocks[a.id] !== undefined ? AppState.sortingStocks[a.id] : (a.stock || 0);
+      const stockB = AppState.sortingStocks[b.id] !== undefined ? AppState.sortingStocks[b.id] : (b.stock || 0);
+      return stockA - stockB;
+    });
   }
 
   // 2. Filtrado por Buscador Instantáneo
@@ -635,8 +661,10 @@ function renderTable() {
     const editingDesc = AppState.editingCell?.id === p.id && AppState.editingCell?.field === "descripcion";
     const editingSector = AppState.editingCell?.id === p.id && AppState.editingCell?.field === "sector";
 
+    const isUpdated = AppState.updatedProducts.has(p.id);
+    const rowClass = isUpdated ? "row-updated" : "";
     htmlRows += `
-      <tr id="tr-prod-${p.id}">
+      <tr id="tr-prod-${p.id}" class="${rowClass}">
         <!-- SKU -->
         <td class="${p.isCombined ? '' : 'editable-cell'}" data-id="${p.id}" data-field="sku">
           ${editingSku ? 
@@ -716,6 +744,16 @@ function renderTable() {
         }, 10);
       });
     });
+  }
+
+  // Mostrar u ocultar botón de restablecer colores según haya productos modificados
+  const btnResetColors = document.getElementById("btn-reset-updated-colors");
+  if (btnResetColors) {
+    if (AppState.updatedProducts.size > 0) {
+      btnResetColors.style.display = "inline-flex";
+    } else {
+      btnResetColors.style.display = "none";
+    }
   }
 }
 
@@ -852,6 +890,24 @@ async function adjustStockInline(id, changeAmount) {
   // Evitar cambios si ya es 0 y decrementa
   if (currentVal === 0 && changeAmount < 0) return;
 
+  // Congelar el stock actual para mantener el orden por 30 segundos
+  if (AppState.sortingStocks[id] === undefined) {
+    AppState.sortingStocks[id] = currentVal;
+  }
+
+  // Configurar o refrescar el temporizador de 30 segundos
+  if (AppState.sortingTimers[id]) {
+    clearTimeout(AppState.sortingTimers[id]);
+  }
+  AppState.sortingTimers[id] = setTimeout(() => {
+    delete AppState.sortingStocks[id];
+    delete AppState.sortingTimers[id];
+    renderTable();
+  }, 30000);
+
+  // Marcar como producto actualizado
+  AppState.updatedProducts.add(id);
+
   // Actualizar input visual inmediatamente en pantalla para velocidad de carga instantánea
   inputStock.value = newVal;
 
@@ -869,6 +925,15 @@ async function adjustStockInline(id, changeAmount) {
     inputStock.value = currentVal;
     tdStock.classList.remove("flash-up", "flash-down");
     alert("Error al actualizar stock en la base de datos.");
+
+    // Limpiar estados locales temporales en caso de fallo
+    if (AppState.sortingTimers[id]) {
+      clearTimeout(AppState.sortingTimers[id]);
+      delete AppState.sortingTimers[id];
+    }
+    delete AppState.sortingStocks[id];
+    AppState.updatedProducts.delete(id);
+    renderTable();
   }
 }
 
@@ -888,6 +953,24 @@ async function saveDirectStockVal(id, inputElement) {
   const changeAmount = newVal - previousVal;
   const tdStock = document.getElementById(`td-stock-${id}`);
 
+  // Congelar el stock previo para mantener el orden por 30 segundos
+  if (AppState.sortingStocks[id] === undefined) {
+    AppState.sortingStocks[id] = previousVal;
+  }
+
+  // Configurar o refrescar el temporizador de 30 segundos
+  if (AppState.sortingTimers[id]) {
+    clearTimeout(AppState.sortingTimers[id]);
+  }
+  AppState.sortingTimers[id] = setTimeout(() => {
+    delete AppState.sortingStocks[id];
+    delete AppState.sortingTimers[id];
+    renderTable();
+  }, 30000);
+
+  // Marcar como producto actualizado
+  AppState.updatedProducts.add(id);
+
   // Disparar flash animado
   const flashClass = changeAmount > 0 ? "flash-up" : "flash-down";
   if (tdStock) {
@@ -902,6 +985,15 @@ async function saveDirectStockVal(id, inputElement) {
     inputElement.value = previousVal;
     if (tdStock) tdStock.classList.remove("flash-up", "flash-down");
     alert("Error al actualizar el stock ingresado.");
+
+    // Limpiar estados locales temporales en caso de fallo
+    if (AppState.sortingTimers[id]) {
+      clearTimeout(AppState.sortingTimers[id]);
+      delete AppState.sortingTimers[id];
+    }
+    delete AppState.sortingStocks[id];
+    AppState.updatedProducts.delete(id);
+    renderTable();
   }
 }
 

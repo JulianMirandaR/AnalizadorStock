@@ -48,7 +48,7 @@
       <!-- BARRA DE CONTROLES, PESTAÑAS Y BÚSQUEDA -->
       <div class="control-bar">
         <!-- Pestañas y Exportación (Arriba de la tabla) -->
-        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+        <div class="branch-controls-wrapper">
           <div class="branch-tabs" id="branch-tabs">
             <button class="tab-btn active" data-branch="santiago">Santiago Marzo</button>
             <button class="tab-btn" data-branch="coronel">Coronel Gil</button>
@@ -61,6 +61,10 @@
           </button>
           <button class="btn-secondary" id="btn-export-all-branches" title="Descargar stock de ambas sucursales" style="border-color: #10b981; color: #10b981; padding: 0.45rem 0.75rem; font-size: 0.8rem; display: none; align-items: center; gap: 0.35rem; height: 36px; border-radius: 6px;">
             <i class="fas fa-file-excel"></i> Descargar Excel Completo
+          </button>
+          <!-- Botón de Restablecer Colores de Modificación -->
+          <button class="btn-secondary" id="btn-reset-updated-colors" title="Restablecer colores de productos acomodados" style="border-color: var(--accent-rose); color: var(--accent-rose); padding: 0.45rem 0.75rem; font-size: 0.8rem; display: none; align-items: center; gap: 0.35rem; height: 36px; border-radius: 6px;">
+            <i class="fas fa-history"></i> Restablecer Colores
           </button>
         </div>
         
