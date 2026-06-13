@@ -30,8 +30,7 @@ const AppState = {
   
   // Control de ordenamiento y color para cambios recientes
   sortingStocks: {}, // Mantiene stock congelado para ordenamiento: { id: stock }
-  sortingTimers: {}, // Mantiene referencias a setTimeout: { id: timer }
-  updatedProducts: new Set() // Set de IDs de productos modificados en esta sesión
+  sortingTimers: {}  // Mantiene referencias a setTimeout: { id: timer }
 };
 
 // Inicialización cuando el DOM está listo
@@ -183,13 +182,31 @@ function setupEventHandlers() {
   // Botón para restablecer colores y ordenamiento diferido
   const btnResetColors = document.getElementById("btn-reset-updated-colors");
   if (btnResetColors) {
-    btnResetColors.addEventListener("click", () => {
-      // Limpiar temporizadores de ordenamiento activos
-      Object.values(AppState.sortingTimers).forEach(timer => clearTimeout(timer));
-      AppState.sortingTimers = {};
-      AppState.sortingStocks = {};
-      AppState.updatedProducts.clear();
-      renderTable();
+    btnResetColors.addEventListener("click", async () => {
+      try {
+        // Mostrar cargando o deshabilitar temporalmente para evitar doble clic
+        btnResetColors.disabled = true;
+        btnResetColors.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Restableciendo...';
+        
+        // 1. Restablecer en el servidor de Firebase
+        await StockDB.resetAcomodados();
+        
+        // 2. Restablecer localmente en el estado de la aplicación
+        AppState.products.forEach(p => p.acomodado = false);
+        
+        // 3. Limpiar temporizadores de ordenamiento activos
+        Object.values(AppState.sortingTimers).forEach(timer => clearTimeout(timer));
+        AppState.sortingTimers = {};
+        AppState.sortingStocks = {};
+        
+        // 4. Renderizar
+        renderTable();
+      } catch (error) {
+        alert("No se pudieron restablecer los productos acomodados en el servidor.");
+      } finally {
+        btnResetColors.disabled = false;
+        btnResetColors.innerHTML = '<i class="fas fa-history"></i> Restablecer Colores';
+      }
     });
   }
 
@@ -661,7 +678,7 @@ function renderTable() {
     const editingDesc = AppState.editingCell?.id === p.id && AppState.editingCell?.field === "descripcion";
     const editingSector = AppState.editingCell?.id === p.id && AppState.editingCell?.field === "sector";
 
-    const isUpdated = AppState.updatedProducts.has(p.id);
+    const isUpdated = p.acomodado === true;
     const rowClass = isUpdated ? "row-updated" : "";
     htmlRows += `
       <tr id="tr-prod-${p.id}" class="${rowClass}">
@@ -749,7 +766,8 @@ function renderTable() {
   // Mostrar u ocultar botón de restablecer colores según haya productos modificados
   const btnResetColors = document.getElementById("btn-reset-updated-colors");
   if (btnResetColors) {
-    if (AppState.updatedProducts.size > 0) {
+    const hasAcomodados = AppState.products.some(p => p.acomodado === true);
+    if (hasAcomodados) {
       btnResetColors.style.display = "inline-flex";
     } else {
       btnResetColors.style.display = "none";
@@ -905,8 +923,14 @@ async function adjustStockInline(id, changeAmount) {
     renderTable();
   }, 30000);
 
-  // Marcar como producto actualizado
-  AppState.updatedProducts.add(id);
+  // Guardar estado anterior de acomodado por si ocurre algún fallo
+  const product = AppState.products.find(p => p.id === id);
+  const wasAcomodado = product ? product.acomodado : false;
+
+  // Marcar como producto acomodado localmente
+  if (product) {
+    product.acomodado = true;
+  }
 
   // Actualizar input visual inmediatamente en pantalla para velocidad de carga instantánea
   inputStock.value = newVal;
@@ -932,7 +956,9 @@ async function adjustStockInline(id, changeAmount) {
       delete AppState.sortingTimers[id];
     }
     delete AppState.sortingStocks[id];
-    AppState.updatedProducts.delete(id);
+    if (product) {
+      product.acomodado = wasAcomodado;
+    }
     renderTable();
   }
 }
@@ -968,8 +994,14 @@ async function saveDirectStockVal(id, inputElement) {
     renderTable();
   }, 30000);
 
-  // Marcar como producto actualizado
-  AppState.updatedProducts.add(id);
+  // Guardar estado anterior de acomodado por si ocurre algún fallo
+  const product = AppState.products.find(p => p.id === id);
+  const wasAcomodado = product ? product.acomodado : false;
+
+  // Marcar como producto acomodado localmente
+  if (product) {
+    product.acomodado = true;
+  }
 
   // Disparar flash animado
   const flashClass = changeAmount > 0 ? "flash-up" : "flash-down";
@@ -992,7 +1024,9 @@ async function saveDirectStockVal(id, inputElement) {
       delete AppState.sortingTimers[id];
     }
     delete AppState.sortingStocks[id];
-    AppState.updatedProducts.delete(id);
+    if (product) {
+      product.acomodado = wasAcomodado;
+    }
     renderTable();
   }
 }

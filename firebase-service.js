@@ -226,8 +226,11 @@ const StockDB = {
         const currentStock = doc.data().stock || 0;
         const newStock = Math.max(0, currentStock + changeAmount);
         
-        // Actualizar stock de neumático
-        transaction.update(prodRef, { stock: newStock });
+        // Actualizar stock de neumático y marcar como acomodado para persistencia en el servidor
+        transaction.update(prodRef, { 
+          stock: newStock, 
+          acomodado: true 
+        });
         
         // Registrar movimiento histórico
         const moveRef = this.db.collection("movements").doc();
@@ -247,6 +250,42 @@ const StockDB = {
       return true;
     } catch (error) {
       console.error("Error al actualizar stock en Firebase:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Restablece el estado acomodado en false para todos los productos en Firebase
+   */
+  async resetAcomodados() {
+    if (!this.db) {
+      throw new Error("No hay conexión activa con el servidor Firebase.");
+    }
+    try {
+      const snapshot = await this.db.collection("products")
+        .where("acomodado", "==", true)
+        .get();
+      
+      if (snapshot.empty) return true;
+
+      let batch = this.db.batch();
+      let count = 0;
+
+      for (const doc of snapshot.docs) {
+        batch.update(doc.ref, { acomodado: false });
+        count++;
+        if (count === 400) {
+          await batch.commit();
+          batch = this.db.batch();
+          count = 0;
+        }
+      }
+      if (count > 0) {
+        await batch.commit();
+      }
+      return true;
+    } catch (error) {
+      console.error("Error al restablecer productos acomodados en Firebase:", error);
       throw error;
     }
   },
