@@ -16,6 +16,11 @@ const StockDB = {
   unsubscribeProducts: null,
   unsubscribeMovements: null,
 
+  // Modo local / offline fallback
+  isOfflineMode: false,
+  offlineProducts: [],
+  offlineMovements: [],
+
   /**
    * Inicializa la base de datos
    */
@@ -55,6 +60,7 @@ const StockDB = {
       this.showConfigurationPendingUI();
     }
 
+    this.activateLocalOfflineMode("Configuración de servidor pendiente o fallida.");
     return false;
   },
 
@@ -123,13 +129,14 @@ const StockDB = {
             products.push({ id: doc.id, ...doc.data() });
           });
           
-          // REMOVIDO EL POBLAMIENTO AUTOMÁTICO PARA QUE QUEDE 100% VACÍO CUANDO EL USUARIO LO BORRA
+          localStorage.setItem("offline_products", JSON.stringify(products));
+
           if (this.onProductsChangeCallback) {
             this.onProductsChangeCallback(products);
           }
         }, (error) => {
           console.error("Error en Snapshot de Productos de Firebase:", error);
-          this.updateConnectionStatusIndicator(false);
+          this.activateLocalOfflineMode("Error en snapshot de productos.");
         });
 
       // Configurar Listeners en tiempo real para Movimientos
@@ -141,6 +148,9 @@ const StockDB = {
           querySnapshot.forEach((doc) => {
             movements.push({ id: doc.id, ...doc.data() });
           });
+
+          localStorage.setItem("offline_movements", JSON.stringify(movements));
+
           if (this.onMovementsChangeCallback) {
             this.onMovementsChangeCallback(movements);
           }
@@ -152,7 +162,7 @@ const StockDB = {
       return true;
     } catch (error) {
       console.error("Error al conectar con Firebase:", error);
-      this.updateConnectionStatusIndicator(false);
+      this.activateLocalOfflineMode("Excepción al conectar con Firebase.");
       return false;
     }
   },
@@ -165,10 +175,14 @@ const StockDB = {
     const text = document.getElementById("status-text");
     if (!dot || !text) return;
 
-    if (isOnline) {
+    if (isOnline && !this.isOfflineMode) {
       dot.className = "status-dot online";
       text.textContent = "Sincronizado";
       text.style.color = "var(--accent-emerald)";
+    } else if (this.isOfflineMode) {
+      dot.className = "status-dot local";
+      text.textContent = "Modo Local (Sin Conexión)";
+      text.style.color = "var(--accent-amber)";
     } else {
       dot.className = "status-dot";
       text.textContent = "Error de Conexión";
@@ -192,6 +206,51 @@ const StockDB = {
   },
 
   /**
+   * Activa el modo de funcionamiento local/offline cargando los datos guardados en LocalStorage.
+   */
+  activateLocalOfflineMode(reason) {
+    this.isOfflineMode = true;
+    console.warn("Cambiando a Modo Local Offline. Razón:", reason);
+    
+    let localProds = [];
+    const savedProds = localStorage.getItem("offline_products");
+    if (savedProds) {
+      try {
+        localProds = JSON.parse(savedProds);
+      } catch (e) {
+        console.error("Error al parsear productos locales:", e);
+      }
+    }
+    
+    if (localProds.length === 0 && typeof INITIAL_MOCK_PRODUCTS !== "undefined") {
+      localProds = [...INITIAL_MOCK_PRODUCTS];
+      localStorage.setItem("offline_products", JSON.stringify(localProds));
+    }
+    
+    this.offlineProducts = localProds;
+
+    let localMovements = [];
+    const savedMovements = localStorage.getItem("offline_movements");
+    if (savedMovements) {
+      try {
+        localMovements = JSON.parse(savedMovements);
+      } catch (e) {
+        console.error("Error al parsear movimientos locales:", e);
+      }
+    }
+    this.offlineMovements = localMovements;
+
+    if (this.onProductsChangeCallback) {
+      this.onProductsChangeCallback(this.offlineProducts);
+    }
+    if (this.onMovementsChangeCallback) {
+      this.onMovementsChangeCallback(this.offlineMovements);
+    }
+
+    this.updateConnectionStatusIndicator(false);
+  },
+
+  /**
    * Retorna todos los productos actuales (vacío en consulta síncrona ya que Firestore es asíncrono)
    */
   getProductsSync() {
@@ -202,9 +261,6 @@ const StockDB = {
    * Modifica el stock de un producto
    */
   async updateStock(productId, changeAmount, operatorName = "Operador") {
-    if (!this.db) {
-      throw new Error("No hay conexión activa con el servidor Firebase.");
-    }
     const now = new Date();
     const timeStr = now.toTimeString().split(" ")[0]; // "17:55:30"
     const dateStr = now.toLocaleDateString("es-ES", {
@@ -213,6 +269,44 @@ const StockDB = {
       year: "numeric"
     }).replace(/\//g, "-"); // "26-05-2026"
     const timestamp = now.getTime();
+
+    if (this.isOfflineMode) {
+      const prod = this.offlineProducts.find(p => p.id === productId);
+      if (!prod) throw new Error("El producto no existe localmente.");
+      
+      const currentStock = prod.stock || 0;
+      const newStock = Math.max(0, currentStock + changeAmount);
+      prod.stock = newStock;
+      prod.acomodado = true;
+      
+      const newMove = {
+        id: `move-local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        sku: prod.sku || "",
+        descripcion: prod.descripcion || "",
+        cambio: changeAmount,
+        stockAnterior: currentStock,
+        stockNuevo: newStock,
+        hora: timeStr,
+        fecha: dateStr,
+        timestamp: timestamp,
+        usuario: operatorName || "Operador",
+        sucursal: prod.sucursal || ""
+      };
+      
+      this.offlineMovements.unshift(newMove);
+      
+      localStorage.setItem("offline_products", JSON.stringify(this.offlineProducts));
+      localStorage.setItem("offline_movements", JSON.stringify(this.offlineMovements));
+      
+      if (this.onProductsChangeCallback) this.onProductsChangeCallback(this.offlineProducts);
+      if (this.onMovementsChangeCallback) this.onMovementsChangeCallback(this.offlineMovements);
+      
+      return true;
+    }
+
+    if (!this.db) {
+      throw new Error("No hay conexión activa con el servidor Firebase.");
+    }
 
     try {
       const prodRef = this.db.collection("products").doc(productId);
@@ -235,16 +329,16 @@ const StockDB = {
         // Registrar movimiento histórico
         const moveRef = this.db.collection("movements").doc();
         transaction.set(moveRef, {
-          sku: doc.data().sku,
-          descripcion: doc.data().descripcion,
+          sku: doc.data().sku || "",
+          descripcion: doc.data().descripcion || "",
           cambio: changeAmount,
           stockAnterior: currentStock,
           stockNuevo: newStock,
           hora: timeStr,
           fecha: dateStr,
           timestamp: timestamp,
-          usuario: operatorName,
-          sucursal: doc.data().sucursal
+          usuario: operatorName || "Operador",
+          sucursal: doc.data().sucursal || ""
         });
       });
       return true;
@@ -258,6 +352,13 @@ const StockDB = {
    * Restablece el estado acomodado en false para todos los productos en Firebase
    */
   async resetAcomodados() {
+    if (this.isOfflineMode) {
+      this.offlineProducts.forEach(p => p.acomodado = false);
+      localStorage.setItem("offline_products", JSON.stringify(this.offlineProducts));
+      if (this.onProductsChangeCallback) this.onProductsChangeCallback(this.offlineProducts);
+      return true;
+    }
+
     if (!this.db) {
       throw new Error("No hay conexión activa con el servidor Firebase.");
     }
@@ -294,6 +395,16 @@ const StockDB = {
    * Modifica campos informativos del producto (SKU, Descripción, Sector, Sucursal)
    */
   async updateProductFields(productId, updatedFields) {
+    if (this.isOfflineMode) {
+      const prod = this.offlineProducts.find(p => p.id === productId);
+      if (!prod) throw new Error("El producto no existe localmente.");
+      
+      Object.assign(prod, updatedFields);
+      localStorage.setItem("offline_products", JSON.stringify(this.offlineProducts));
+      if (this.onProductsChangeCallback) this.onProductsChangeCallback(this.offlineProducts);
+      return true;
+    }
+
     if (!this.db) {
       throw new Error("No hay conexión activa con el servidor Firebase.");
     }
@@ -311,6 +422,24 @@ const StockDB = {
    * Crea un nuevo producto en el catálogo
    */
   async addProduct(productData) {
+    if (this.isOfflineMode) {
+      const newId = `prod-local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const newProduct = {
+        id: newId,
+        sku: productData.sku || "",
+        descripcion: productData.descripcion || "Nuevo Neumático",
+        stock: parseInt(productData.stock) || 0,
+        sector: productData.sector || "",
+        sucursal: productData.sucursal || "Santiago Marzo",
+        acomodado: false
+      };
+      
+      this.offlineProducts.push(newProduct);
+      localStorage.setItem("offline_products", JSON.stringify(this.offlineProducts));
+      if (this.onProductsChangeCallback) this.onProductsChangeCallback(this.offlineProducts);
+      return newId;
+    }
+
     if (!this.db) {
       throw new Error("No hay conexión activa con el servidor Firebase.");
     }
@@ -335,6 +464,13 @@ const StockDB = {
    * Elimina un producto por ID
    */
   async deleteProduct(productId) {
+    if (this.isOfflineMode) {
+      this.offlineProducts = this.offlineProducts.filter(p => p.id !== productId);
+      localStorage.setItem("offline_products", JSON.stringify(this.offlineProducts));
+      if (this.onProductsChangeCallback) this.onProductsChangeCallback(this.offlineProducts);
+      return true;
+    }
+
     if (!this.db) {
       throw new Error("No hay conexión activa con el servidor Firebase.");
     }
@@ -351,9 +487,6 @@ const StockDB = {
    * Omite o sobrescribe los productos que ya existen en la sucursal seleccionada basándose en el SKU.
    */
   async importProductsBulk(productsArray, branchName, operatorName = "Operador (Excel)", overwriteExistingStock = false) {
-    if (!this.db) {
-      throw new Error("No hay conexión activa con el servidor Firebase.");
-    }
     const now = new Date();
     const timeStr = now.toTimeString().split(" ")[0];
     const dateStr = now.toLocaleDateString("es-ES", {
@@ -362,6 +495,94 @@ const StockDB = {
       year: "numeric"
     }).replace(/\//g, "-");
     const timestamp = now.getTime();
+
+    if (this.isOfflineMode) {
+      const existingProductsMap = new Map(
+        this.offlineProducts
+          .filter(p => p.sucursal === branchName)
+          .map(p => [String(p.sku).trim().toLowerCase(), p])
+      );
+
+      const newProductsToImport = [];
+      const productsToUpdate = [];
+      const importedSkusInBatch = new Set();
+
+      productsArray.forEach(p => {
+        const skuStr = String(p.sku || "").trim();
+        const skuLower = skuStr.toLowerCase();
+        
+        if (!skuStr) return;
+        if (importedSkusInBatch.has(skuLower)) return;
+        importedSkusInBatch.add(skuLower);
+
+        const existingProduct = existingProductsMap.get(skuLower);
+
+        if (existingProduct) {
+          if (overwriteExistingStock) {
+            const newStock = Math.max(0, parseInt(p.stock) || 0);
+            if (existingProduct.stock !== newStock) {
+              productsToUpdate.push({
+                product: existingProduct,
+                stockAnterior: existingProduct.stock,
+                stockNuevo: newStock
+              });
+            }
+          }
+        } else {
+          newProductsToImport.push({
+            id: `prod-local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${newProductsToImport.length}`,
+            sku: skuStr,
+            descripcion: String(p.descripcion || "Neumático Importado").trim(),
+            stock: Math.max(0, parseInt(p.stock) || 0),
+            sector: String(p.sector || "").trim(),
+            sucursal: branchName,
+            acomodado: false
+          });
+        }
+      });
+
+      newProductsToImport.forEach(prod => this.offlineProducts.push(prod));
+
+      productsToUpdate.forEach(item => {
+        item.product.stock = item.stockNuevo;
+      });
+
+      const totalDiff = newProductsToImport.reduce((acc, p) => acc + p.stock, 0) +
+                        productsToUpdate.reduce((acc, p) => acc + (p.stockNuevo - p.stockAnterior), 0);
+
+      let consolidationMsg = `Importados ${newProductsToImport.length} neumáticos nuevos desde Excel`;
+      if (productsToUpdate.length > 0) {
+        consolidationMsg += ` y actualizados ${productsToUpdate.length} existentes`;
+      }
+
+      const newMove = {
+        id: `move-local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        sku: "IMPORT",
+        descripcion: consolidationMsg,
+        cambio: totalDiff,
+        stockAnterior: 0,
+        stockNuevo: totalDiff,
+        hora: timeStr,
+        fecha: dateStr,
+        timestamp: timestamp,
+        usuario: operatorName,
+        sucursal: branchName
+      };
+
+      this.offlineMovements.unshift(newMove);
+
+      localStorage.setItem("offline_products", JSON.stringify(this.offlineProducts));
+      localStorage.setItem("offline_movements", JSON.stringify(this.offlineMovements));
+
+      if (this.onProductsChangeCallback) this.onProductsChangeCallback(this.offlineProducts);
+      if (this.onMovementsChangeCallback) this.onMovementsChangeCallback(this.offlineMovements);
+
+      return { added: newProductsToImport.length, updated: productsToUpdate.length, skipped: productsArray.length - newProductsToImport.length - productsToUpdate.length };
+    }
+
+    if (!this.db) {
+      throw new Error("No hay conexión activa con el servidor Firebase.");
+    }
 
     // 1. Obtener productos cargados para verificar existentes por SKU en esta sucursal
     let currentProducts = [];
@@ -512,6 +733,16 @@ const StockDB = {
    * Borra absolutamente todos los productos y movimientos del catálogo para iniciar de cero.
    */
   async clearAllProducts() {
+    if (this.isOfflineMode) {
+      this.offlineProducts = [];
+      this.offlineMovements = [];
+      localStorage.setItem("offline_products", JSON.stringify(this.offlineProducts));
+      localStorage.setItem("offline_movements", JSON.stringify(this.offlineMovements));
+      if (this.onProductsChangeCallback) this.onProductsChangeCallback(this.offlineProducts);
+      if (this.onMovementsChangeCallback) this.onMovementsChangeCallback(this.offlineMovements);
+      return true;
+    }
+
     if (!this.db) {
       throw new Error("No hay conexión activa con el servidor Firebase.");
     }
@@ -538,6 +769,106 @@ const StockDB = {
     } catch (err) {
       console.error("Error al vaciar colecciones en Firebase:", err);
       throw err;
+    }
+  },
+
+  /**
+   * Pone el stock de todos los productos en 0 y restablece el estado acomodado en false.
+   */
+  async resetAllStocksToZero() {
+    const now = new Date();
+    const timeStr = now.toTimeString().split(" ")[0];
+    const dateStr = now.toLocaleDateString("es-ES", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric"
+    }).replace(/\//g, "-");
+    const timestamp = now.getTime();
+
+    if (this.isOfflineMode) {
+      this.offlineProducts.forEach(p => {
+        p.stock = 0;
+        p.acomodado = false;
+      });
+
+      const newMove = {
+        id: `move-local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        sku: "RESET",
+        descripcion: "Se restableció el stock de todos los neumáticos a 0",
+        cambio: 0,
+        stockAnterior: 0,
+        stockNuevo: 0,
+        hora: timeStr,
+        fecha: dateStr,
+        timestamp: timestamp,
+        usuario: "Operador",
+        sucursal: "Ambas Sucursales"
+      };
+
+      this.offlineMovements.unshift(newMove);
+
+      localStorage.setItem("offline_products", JSON.stringify(this.offlineProducts));
+      localStorage.setItem("offline_movements", JSON.stringify(this.offlineMovements));
+
+      if (this.onProductsChangeCallback) this.onProductsChangeCallback(this.offlineProducts);
+      if (this.onMovementsChangeCallback) this.onMovementsChangeCallback(this.offlineMovements);
+
+      return true;
+    }
+
+    if (!this.db) {
+      throw new Error("No hay conexión activa con el servidor Firebase.");
+    }
+    try {
+      const snapshot = await this.db.collection("products").get();
+      if (snapshot.empty) return true;
+
+      const now = new Date();
+      const timeStr = now.toTimeString().split(" ")[0];
+      const dateStr = now.toLocaleDateString("es-ES", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric"
+      }).replace(/\//g, "-");
+      const timestamp = now.getTime();
+
+      let batch = this.db.batch();
+      let count = 0;
+
+      for (const doc of snapshot.docs) {
+        batch.update(doc.ref, { 
+          stock: 0,
+          acomodado: false
+        });
+        count++;
+        if (count === 400) {
+          await batch.commit();
+          batch = this.db.batch();
+          count = 0;
+        }
+      }
+      if (count > 0) {
+        await batch.commit();
+      }
+
+      // Registrar movimiento consolidado en el historial
+      await this.db.collection("movements").add({
+        sku: "RESET",
+        descripcion: "Se restableció el stock de todos los neumáticos a 0",
+        cambio: 0,
+        stockAnterior: 0,
+        stockNuevo: 0,
+        hora: timeStr,
+        fecha: dateStr,
+        timestamp: timestamp,
+        usuario: "Operador",
+        sucursal: "Ambas Sucursales"
+      });
+
+      return true;
+    } catch (error) {
+      console.error("Error al poner todo el stock en 0 en Firebase:", error);
+      throw error;
     }
   },
 

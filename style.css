@@ -121,6 +121,11 @@ body {
   box-shadow: 0 0 8px var(--accent-emerald);
 }
 
+.status-dot.local {
+  background-color: var(--accent-amber);
+  box-shadow: 0 0 8px var(--accent-amber);
+}
+
 .quick-stats {
   display: flex;
   gap: 1rem;

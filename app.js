@@ -88,9 +88,15 @@ function updateConnectionStatusUI(isFirebaseActive) {
     text.textContent = "Servidor Conectado";
     text.style.color = "var(--accent-emerald)";
   } else {
-    dot.className = "status-dot";
-    text.textContent = "Servidor Desconectado";
-    text.style.color = "var(--accent-rose)";
+    if (StockDB.isOfflineMode) {
+      dot.className = "status-dot local";
+      text.textContent = "Modo Local (Sin Conexión)";
+      text.style.color = "var(--accent-amber)";
+    } else {
+      dot.className = "status-dot";
+      text.textContent = "Servidor Desconectado";
+      text.style.color = "var(--accent-rose)";
+    }
   }
 }
 
@@ -202,10 +208,43 @@ function setupEventHandlers() {
         // 4. Renderizar
         renderTable();
       } catch (error) {
-        alert("No se pudieron restablecer los productos acomodados en el servidor.");
+        alert("No se pudieron restablecer los productos acomodados en el servidor: " + error.message);
       } finally {
         btnResetColors.disabled = false;
         btnResetColors.innerHTML = '<i class="fas fa-history"></i> Restablecer Colores';
+      }
+    });
+  }
+
+  // Botón para poner todo el stock en 0
+  const btnResetAllStock = document.getElementById("btn-reset-all-stock");
+  if (btnResetAllStock) {
+    btnResetAllStock.addEventListener("click", async () => {
+      const confirm1 = confirm("¿Está seguro de que desea poner en 0 el stock de TODOS los neumáticos en el catálogo?\nEsta acción afectará a ambas sucursales.");
+      if (!confirm1) return;
+
+      const confirm2 = confirm("¿REALMENTE desea continuar? Esta acción modificará permanentemente todos los stocks en la base de datos y no se puede deshacer de forma automática.");
+      if (!confirm2) return;
+
+      try {
+        btnResetAllStock.disabled = true;
+        btnResetAllStock.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Procesando...';
+
+        await StockDB.resetAllStocksToZero();
+
+        // Actualizar localmente por si tarda la sincronización en tiempo real
+        AppState.products.forEach(p => {
+          p.stock = 0;
+          p.acomodado = false;
+        });
+
+        renderTable();
+        alert("¡Todo el stock ha sido restablecido a 0 correctamente!");
+      } catch (error) {
+        alert("No se pudo restablecer el stock a 0: " + error.message);
+      } finally {
+        btnResetAllStock.disabled = false;
+        btnResetAllStock.innerHTML = '<i class="fas fa-trash-restore"></i> Poner Todo en 0';
       }
     });
   }
@@ -826,7 +865,7 @@ async function saveInlineNewProduct() {
     AppState.isAddingProduct = false;
     renderTable();
   } catch (error) {
-    alert("Ocurrió un error al guardar el neumático. Por favor, intente de nuevo.");
+    alert("Ocurrió un error al guardar el neumático. Por favor, intente de nuevo: " + error.message);
   }
 }
 
@@ -838,7 +877,7 @@ async function deleteProductInline(id, sku) {
     try {
       await StockDB.deleteProduct(id);
     } catch (err) {
-      alert("Error al intentar eliminar el producto.");
+      alert("Error al intentar eliminar el producto: " + err.message);
     }
   }
 }
@@ -888,7 +927,7 @@ async function saveCellInline(id, field, newValue) {
     await StockDB.updateProductFields(id, updatedFields);
     console.log(`Guardado exitoso del campo ${field} de neumático ID: ${id}`);
   } catch (error) {
-    alert("No se pudo actualizar el campo de forma directa en el servidor.");
+    alert("No se pudo actualizar el campo de forma directa en el servidor: " + error.message);
     renderTable();
   }
 }
@@ -948,7 +987,7 @@ async function adjustStockInline(id, changeAmount) {
     // Si falla, revertir input visual
     inputStock.value = currentVal;
     tdStock.classList.remove("flash-up", "flash-down");
-    alert("Error al actualizar stock en la base de datos.");
+    alert("Error al actualizar stock en la base de datos: " + error.message);
 
     // Limpiar estados locales temporales en caso de fallo
     if (AppState.sortingTimers[id]) {
@@ -1016,7 +1055,7 @@ async function saveDirectStockVal(id, inputElement) {
   } catch (error) {
     inputElement.value = previousVal;
     if (tdStock) tdStock.classList.remove("flash-up", "flash-down");
-    alert("Error al actualizar el stock ingresado.");
+    alert("Error al actualizar el stock ingresado: " + error.message);
 
     // Limpiar estados locales temporales en caso de fallo
     if (AppState.sortingTimers[id]) {
